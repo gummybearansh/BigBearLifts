@@ -1,0 +1,192 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Exercise {
+  id               String            @id @default(cuid())
+  name             String            @unique
+  primaryMuscle    String
+  secondaryMuscles String[]
+  equipment        String
+  isFavorite       Boolean           @default(false)
+  isAssisted       Boolean           @default(false)
+  isCustom         Boolean           @default(true)
+  restSec          Int?
+  warmupScheme     Json?
+  setupFields      SetupField[]
+  variants         ExerciseVariant[]
+  programExercises ProgramExercise[]
+  workoutExercises WorkoutExercise[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+model SetupField {
+  id           String   @id @default(cuid())
+  exerciseId   String
+  exercise     Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  label        String
+  type         String
+  options      String[] @default([])
+  order        Int
+  defaultValue String?
+  updatedAt    DateTime @updatedAt
+}
+
+model ExerciseVariant {
+  id               String            @id @default(cuid())
+  exerciseId       String
+  exercise         Exercise          @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  setupValues      Json
+  label            String
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  workoutExercises WorkoutExercise[]
+}
+
+model Program {
+  id        String       @id @default(cuid())
+  name      String
+  isActive  Boolean      @default(true)
+  days      ProgramDay[]
+  updatedAt DateTime     @updatedAt
+}
+
+model ProgramDay {
+  id         String            @id @default(cuid())
+  programId  String
+  program    Program           @relation(fields: [programId], references: [id], onDelete: Cascade)
+  label      String
+  order      Int
+  exercises  ProgramExercise[]
+  updatedAt  DateTime          @updatedAt
+}
+
+model ProgramExercise {
+  id            String     @id @default(cuid())
+  programDayId  String
+  programDay    ProgramDay @relation(fields: [programDayId], references: [id], onDelete: Cascade)
+  exerciseId    String
+  exercise      Exercise   @relation(fields: [exerciseId], references: [id])
+  order         Int
+  targetSets    Int
+  targetRepsMin Int
+  targetRepsMax Int
+  notes         String?
+  presetSetup   Json?
+  setStyle      String     @default("straight")
+  updatedAt     DateTime   @updatedAt
+}
+
+model Workout {
+  id           String            @id @default(cuid())
+  programDayId String?
+  label        String
+  location     String?
+  startedAt    DateTime          @default(now())
+  finishedAt   DateTime?
+  notes        String?
+  exercises    WorkoutExercise[]
+  totalVolume  Float             @default(0)
+  totalSets    Int               @default(0)
+  updatedAt    DateTime          @updatedAt
+}
+
+model WorkoutExercise {
+  id         String       @id @default(cuid())
+  workoutId  String
+  workout    Workout      @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  exerciseId String
+  exercise   Exercise     @relation(fields: [exerciseId], references: [id])
+  variantId  String?
+  variant    ExerciseVariant? @relation(fields: [variantId], references: [id])
+  order      Int
+  notes      String?
+  sets       WorkoutSet[]
+  updatedAt  DateTime     @updatedAt
+}
+
+model WorkoutSet {
+  id                String          @id @default(cuid())
+  workoutExerciseId String
+  workoutExercise   WorkoutExercise @relation(fields: [workoutExerciseId], references: [id], onDelete: Cascade)
+  order             Int
+  type              String
+  weight            Float
+  reps              Int
+  parentSetId       String?
+  parentSet         WorkoutSet?     @relation("DropChain", fields: [parentSetId], references: [id], onDelete: SetNull)
+  drops             WorkoutSet[]    @relation("DropChain")
+  dropLevel         Int?
+  isCompleted       Boolean         @default(true)
+  partials          Json?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+}
+
+model BodyMetric {
+  id         String   @id @default(cuid())
+  date       DateTime @unique @db.Date
+  weightKg   Float?
+  bodyFatPct Float?
+  smmKg      Float?
+  notes      String?
+  updatedAt  DateTime @updatedAt
+}
+
+model ProgressVideo {
+  id          String    @id @default(cuid())
+  filename    String
+  sizeBytes   Int
+  durationSec Int?
+  exerciseId  String?
+  notes       String?
+  status      String
+  uploadedAt  DateTime  @default(now())
+  syncedAt    DateTime?
+  updatedAt   DateTime  @updatedAt
+}
+
+model Goal {
+  id          String    @id @default(cuid())
+  type        String
+  targetValue Float
+  exerciseId  String?
+  deadline    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model PR {
+  id            String   @id @default(cuid())
+  exerciseId    String
+  variantId     String?
+  type          String
+  value         Float
+  contextWeight Float?
+  achievedAt    DateTime
+  workoutSetId  String?
+  updatedAt     DateTime @updatedAt
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

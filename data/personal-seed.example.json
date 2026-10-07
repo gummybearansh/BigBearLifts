@@ -1,0 +1,37 @@
+{
+  "exercises": [
+    {
+      "name": "Example Press",
+      "primaryMuscle": "chest",
+      "secondaryMuscles": [],
+      "equipment": "barbell",
+      "setupFields": [
+        {
+          "label": "Grip",
+          "type": "enum",
+          "options": ["wide", "narrow"],
+          "defaultValue": "wide"
+        }
+      ]
+    }
+  ],
+  "program": {
+    "name": "Example",
+    "days": [
+      {
+        "label": "Day 1",
+        "order": 0,
+        "exercises": [
+          {
+            "name": "Example Press",
+            "targetSets": 3,
+            "targetRepsMin": 5,
+            "targetRepsMax": 5,
+            "setStyle": "straight",
+            "presetSetup": null
+          }
+        ]
+      }
+    ]
+  }
+}
