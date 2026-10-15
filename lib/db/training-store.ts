@@ -11,11 +11,9 @@ import {
   type GoalRecord,
   type LocalBodyMetric,
   type LocalGoal,
-  type LocalPr,
   type LocalProgram,
   type LocalProgramDay,
   type LocalProgramExercise,
-  type LocalVideo,
   type LocalWorkout,
   type LocalWorkoutExercise,
   type LocalWorkoutSet,
@@ -30,7 +28,7 @@ import {
   type WorkoutSetRecord,
 } from "@/lib/records";
 import type { VariantRecord } from "@/lib/exercise-record";
-import { detectPrs, nextInRotation, warmupLoads } from "@/lib/training";
+import { detectPrs, nextInRotation } from "@/lib/training";
 import { setVolumeKg } from "@/lib/volume";
 
 const DEFAULT_PLATES = [25, 20, 15, 10, 5, 2.5, 1.25];
@@ -147,15 +145,17 @@ export async function applySyncBundle(bundle: SyncBundle): Promise<void> {
         await putIfClean((key) => db.workouts.get(key), (item) => db.workouts.put(item), asWorkout(row));
       }
       for (const row of bundle.workoutExercises) {
-        if (buried.has(row.workoutId)) continue;
+        if (buried.has(row.workoutId) || buried.has(row.id)) continue;
         await putIfClean((key) => db.workoutExercises.get(key), (item) => db.workoutExercises.put(item), asWorkoutExercise(row));
       }
       for (const row of bundle.workoutSets) {
-        if (buriedExercises.has(row.workoutExerciseId)) continue;
+        if (buried.has(row.workoutExerciseId) || buriedExercises.has(row.workoutExerciseId)) continue;
         await putIfClean((key) => db.workoutSets.get(key), (item) => db.workoutSets.put(item), asSet(row));
       }
-      for (const row of bundle.bodyMetrics)
+      for (const row of bundle.bodyMetrics) {
+        if (buried.has(row.id)) continue;
         await putIfClean((key) => db.bodyMetrics.get(key), (item) => db.bodyMetrics.put(item), { ...row, ...cleanStamp(row.updatedAt) });
+      }
       for (const row of bundle.goals)
         await putIfClean((key) => db.goals.get(key), (item) => db.goals.put(item), { ...row, ...cleanStamp(row.updatedAt) });
       for (const row of bundle.prs)
@@ -245,6 +245,7 @@ export async function syncTraining(): Promise<void> {
   syncing = true;
   try {
     await ensureSettings();
+    await dropWeighInsBeforeJune();
     await pushTombstones();
     await pullExercises();
     const settings = await db.settings.get("local");
@@ -375,6 +376,97 @@ export async function readActiveProgram() {
   return { program: active, days, exercises };
 }
 
+export async function addExerciseToWorkout(workoutId: string, exerciseId: string): Promise<void> {
+  const existing = await db.workoutExercises.where("workoutId").equals(workoutId).toArray();
+  const order = existing.reduce((max, row) => Math.max(max, row.order), -1) + 1;
+  const stamp = dirtyStamp();
+  const workoutExerciseId = createId();
+  const workouts = await db.workouts.toArray();
+  const finishedAt = new Map(
+    workouts.flatMap((workout) => (workout.finishedAt ? [[workout.id, workout.finishedAt] as const] : [])),
+  );
+  const prior = (await db.workoutExercises.where("exerciseId").equals(exerciseId).toArray())
+    .filter((row) => row.workoutId !== workoutId && finishedAt.has(row.workoutId))
+    .sort((a, b) => (finishedAt.get(b.workoutId) ?? "").localeCompare(finishedAt.get(a.workoutId) ?? ""))[0];
+  const priorSets = prior
+    ? (await db.workoutSets.where("workoutExerciseId").equals(prior.id).toArray())
+        .filter((set) => set.type !== "warmup")
+        .sort((a, b) => a.order - b.order)
+    : [];
+  const defined = await db.setupFields.where("exerciseId").equals(exerciseId).toArray();
+  const setupValues = Object.fromEntries(defined.flatMap((field) => (field.defaultValue ? [[field.label, field.defaultValue]] : [])));
+  const templates = priorSets.length
+    ? priorSets
+    : [{ type: "working" as const, weight: 0, reps: 0, parentSetId: null, dropLevel: null }];
+  const sets: LocalWorkoutSet[] = templates.map((template, index) => ({
+    id: createId(),
+    workoutExerciseId,
+    order: index,
+    type: template.type,
+    weight: template.weight,
+    reps: template.reps,
+    parentSetId: null,
+    dropLevel: template.dropLevel,
+    partials: null,
+    isCompleted: false,
+    createdAt: stamp.updatedAt,
+    ...stamp,
+  }));
+  await db.transaction("rw", [db.workoutExercises, db.workoutSets, db.workouts], async () => {
+    await db.workoutExercises.add({
+      id: workoutExerciseId,
+      workoutId,
+      exerciseId,
+      variantId: prior?.variantId ?? null,
+      order,
+      notes: null,
+      setupValues: { ...setupValues, ...(prior?.setupValues ?? {}) },
+      ...stamp,
+    });
+    await db.workoutSets.bulkAdd(sets);
+    await db.workouts.update(workoutId, stamp);
+  });
+}
+
+export async function removeExerciseFromWorkout(workoutExerciseId: string): Promise<void> {
+  const block = await db.workoutExercises.get(workoutExerciseId);
+  if (!block) return;
+  const sets = await db.workoutSets.where("workoutExerciseId").equals(workoutExerciseId).toArray();
+  const stamp = dirtyStamp();
+  await db.transaction("rw", [db.workoutExercises, db.workoutSets, db.tombstones, db.workouts], async () => {
+    if (sets.length) await db.workoutSets.bulkDelete(sets.map((set) => set.id));
+    await db.workoutExercises.delete(workoutExerciseId);
+    await db.tombstones.add({
+      id: createId(),
+      table: "workoutExercises",
+      recordId: workoutExerciseId,
+      updatedAt: stamp.updatedAt,
+      _dirty: true,
+      _syncedAt: null,
+    });
+    await db.workouts.update(block.workoutId, stamp);
+  });
+}
+
+export async function dropWeighInsBeforeJune(): Promise<void> {
+  const old = (await db.bodyMetrics.toArray()).filter((row) => row.date < "2026-06-01");
+  if (!old.length) return;
+  const stamp = dirtyStamp();
+  await db.transaction("rw", [db.bodyMetrics, db.tombstones], async () => {
+    await db.bodyMetrics.bulkDelete(old.map((row) => row.id));
+    await db.tombstones.bulkAdd(
+      old.map((row) => ({
+        id: createId(),
+        table: "bodyMetrics",
+        recordId: row.id,
+        updatedAt: stamp.updatedAt,
+        _dirty: true,
+        _syncedAt: null,
+      })),
+    );
+  });
+}
+
 export async function discardWorkout(workoutId: string): Promise<void> {
   const blocks = await db.workoutExercises.where("workoutId").equals(workoutId).toArray();
   const sets = blocks.length
@@ -461,6 +553,10 @@ async function openWorkoutForDay(dayId: string): Promise<string> {
           .filter((set) => set.workoutExerciseId === prior.id && set.type !== "warmup")
           .sort((a, b) => a.order - b.order)
       : [];
+    const defined = await db.setupFields.where("exerciseId").equals(plannedExercise.exerciseId).toArray();
+    const fromExercise = Object.fromEntries(
+      defined.flatMap((field) => (field.defaultValue ? [[field.label, field.defaultValue]] : [])),
+    );
     exerciseRows.push({
       id: workoutExerciseId,
       workoutId,
@@ -468,7 +564,7 @@ async function openWorkoutForDay(dayId: string): Promise<string> {
       variantId: prior?.variantId ?? null,
       order: plannedExercise.order,
       notes: null,
-      setupValues: prior?.setupValues ?? plannedExercise.presetSetup ?? {},
+      setupValues: { ...fromExercise, ...(plannedExercise.presetSetup ?? {}), ...(prior?.setupValues ?? {}) },
       ...stamp,
     });
 
@@ -521,35 +617,6 @@ export async function nextDayId(): Promise<string | null> {
 
 export async function touchWorkout(workoutId: string): Promise<void> {
   await db.workouts.update(workoutId, dirtyStamp());
-}
-
-export async function generateWarmups(workoutExerciseId: string, workingKg: number): Promise<void> {
-  if (workingKg <= 0) return;
-  const sets = await db.workoutSets.where("workoutExerciseId").equals(workoutExerciseId).toArray();
-  if (sets.some((set) => set.type === "warmup")) return;
-  const block = await db.workoutExercises.get(workoutExerciseId);
-  const exercise = block ? await db.exercises.get(block.exerciseId) : undefined;
-  const loads = warmupLoads(workingKg, exercise?.warmupScheme ?? null);
-  const stamp = dirtyStamp();
-  const warmups: LocalWorkoutSet[] = loads.map((load, index) => ({
-    id: createId(),
-    workoutExerciseId,
-    order: index,
-    type: "warmup",
-    weight: load.weight,
-    reps: load.reps,
-    parentSetId: null,
-    dropLevel: null,
-    partials: null,
-    isCompleted: false,
-    createdAt: stamp.updatedAt,
-    ...stamp,
-  }));
-  const shifted = sets.map((set) => ({ ...set, order: set.order + warmups.length, ...stamp }));
-  await db.transaction("rw", db.workoutSets, async () => {
-    await db.workoutSets.bulkPut([...warmups, ...shifted]);
-  });
-  if (block) await touchWorkout(block.workoutId);
 }
 
 export async function finishWorkout(workoutId: string): Promise<void> {

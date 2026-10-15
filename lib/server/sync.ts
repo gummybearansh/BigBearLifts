@@ -152,6 +152,7 @@ const DELETE_TABLES = new Set([
   "programDays",
   "programExercises",
   "workouts",
+  "workoutExercises",
   "goals",
   "bodyMetrics",
 ]);
@@ -310,6 +311,7 @@ export async function applyPush(body: unknown): Promise<void> {
       if (tomb.table === "programDays") await tx.programDay.deleteMany({ where: { id: tomb.recordId } });
       if (tomb.table === "programs") await tx.program.deleteMany({ where: { id: tomb.recordId } });
       if (tomb.table === "workouts") await tx.workout.deleteMany({ where: { id: tomb.recordId } });
+      if (tomb.table === "workoutExercises") await tx.workoutExercise.deleteMany({ where: { id: tomb.recordId } });
       if (tomb.table === "goals") await tx.goal.deleteMany({ where: { id: tomb.recordId } });
       if (tomb.table === "bodyMetrics") await tx.bodyMetric.deleteMany({ where: { id: tomb.recordId } });
     }

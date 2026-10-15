@@ -3,11 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import { NativeSelect } from "@/components/ui/native-select";
 import {
   Sheet,
@@ -18,7 +17,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { db } from "@/lib/db/dexie";
-import { discardWorkout, finishWorkout, generateWarmups, touchWorkout } from "@/lib/db/training-store";
+import { addExerciseToWorkout, discardWorkout, finishWorkout, removeExerciseFromWorkout, touchWorkout } from "@/lib/db/training-store";
 import { createId } from "@/lib/ids";
 import { dirtyStamp, type LocalWorkoutExercise, type LocalWorkoutSet, type SetType } from "@/lib/records";
 import { displayToKg, formatWeight, kgToDisplay, platesPerSide } from "@/lib/training";
@@ -40,7 +39,7 @@ export function ActiveWorkout({ id }: { id: string }) {
   const [confirm, setConfirm] = useState(false);
   const [plateKg, setPlateKg] = useState<number | null>(null);
   const [pending, setPending] = useState(false);
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const [addExerciseId, setAddExerciseId] = useState("");
   const unit = settings?.unit ?? "kg";
 
   useEffect(() => {
@@ -50,13 +49,27 @@ export function ActiveWorkout({ id }: { id: string }) {
 
   const elapsed = workout ? formatElapsed(now - new Date(workout.startedAt).getTime()) : "0:00";
   const ordered = blocks ?? [];
+  const open = Boolean(workout && !workout.finishedAt);
+  const exerciseOptions = [...(exercises ?? [])]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((exercise) => ({ value: exercise.id, label: exercise.name }));
 
-  async function onDragEnd(event: DragEndEvent) {
-    if (!blocks || !event.over || event.active.id === event.over.id) return;
-    const oldIndex = blocks.findIndex((row) => row.id === event.active.id);
-    const newIndex = blocks.findIndex((row) => row.id === event.over?.id);
-    if (oldIndex < 0 || newIndex < 0) return;
-    const next = arrayMove(blocks, oldIndex, newIndex);
+  async function addExercise() {
+    if (!addExerciseId || !open) return;
+    await addExerciseToWorkout(id, addExerciseId);
+    setAddExerciseId("");
+  }
+
+  async function moveBlock(blockId: string, direction: -1 | 1) {
+    if (!blocks || !open) return;
+    const index = blocks.findIndex((row) => row.id === blockId);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= blocks.length) return;
+    const next = blocks.slice();
+    const moved = next[index];
+    if (!moved) return;
+    next.splice(index, 1);
+    next.splice(target, 0, moved);
     const stamp = dirtyStamp();
     await db.workoutExercises.bulkPut(next.map((row, index) => ({ ...row, order: index, ...stamp })));
     await touchWorkout(id);
@@ -102,23 +115,38 @@ export function ActiveWorkout({ id }: { id: string }) {
           </div>
           <RestPill />
         </div>
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(event) => void onDragEnd(event)}>
-          <SortableContext items={ordered.map((row) => row.id)} strategy={verticalListSortingStrategy}>
-            {ordered.map((block) => (
-              <ExerciseBlock
-                key={block.id}
-                block={block}
-                sets={(sets ?? []).filter((set) => set.workoutExerciseId === block.id).sort((a, b) => a.order - b.order)}
-                name={exercises?.find((exercise) => exercise.id === block.exerciseId)?.name ?? "Exercise"}
-                restSec={exercises?.find((exercise) => exercise.id === block.exerciseId)?.restSec ?? null}
-                setupFields={(fields ?? []).filter((field) => field.exerciseId === block.exerciseId).sort((a, b) => a.order - b.order)}
-                unit={unit}
-                workoutId={id}
-                onPlate={setPlateKg}
-              />
-            ))}
-          </SortableContext>
-        </DndContext>
+        {ordered.map((block, index) => (
+          <ExerciseBlock
+            key={block.id}
+            block={block}
+            sets={(sets ?? []).filter((set) => set.workoutExerciseId === block.id).sort((a, b) => a.order - b.order)}
+            name={exercises?.find((exercise) => exercise.id === block.exerciseId)?.name ?? "Exercise"}
+            restSec={exercises?.find((exercise) => exercise.id === block.exerciseId)?.restSec ?? null}
+            setupFields={(fields ?? []).filter((field) => field.exerciseId === block.exerciseId).sort((a, b) => a.order - b.order)}
+            unit={unit}
+            workoutId={id}
+            onPlate={setPlateKg}
+            onRemove={open ? () => void removeExerciseFromWorkout(block.id) : undefined}
+            onMoveUp={open && index > 0 ? () => void moveBlock(block.id, -1) : undefined}
+            onMoveDown={open && index < ordered.length - 1 ? () => void moveBlock(block.id, 1) : undefined}
+          />
+        ))}
+        {open ? (
+          <div className="grid grid-cols-[1fr_auto] gap-2">
+            <Combobox
+              ariaLabel="Add exercise"
+              value={addExerciseId}
+              placeholder="Add exercise"
+              searchPlaceholder="Search exercises"
+              emptyMessage="No exercises"
+              options={exerciseOptions}
+              onChange={setAddExerciseId}
+            />
+            <Button type="button" disabled={!addExerciseId} onClick={() => void addExercise()}>
+              Add
+            </Button>
+          </div>
+        ) : null}
       </main>
       <Sheet open={confirm} onOpenChange={setConfirm}>
         <SheetContent>
@@ -160,6 +188,9 @@ function ExerciseBlock({
   unit,
   workoutId,
   onPlate,
+  onRemove,
+  onMoveUp,
+  onMoveDown,
 }: {
   block: LocalWorkoutExercise;
   sets: LocalWorkoutSet[];
@@ -169,18 +200,23 @@ function ExerciseBlock({
   unit: "kg" | "lb";
   workoutId: string;
   onPlate: (kg: number) => void;
+  onRemove?: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: block.id });
-  const style = { transform: CSS.Transform.toString(transform), transition };
+  const [customOpen, setCustomOpen] = useState(false);
+  const customText = setupFields
+    .flatMap((field) => {
+      const value = block.setupValues[field.label];
+      if (value === undefined || value === null || String(value).trim() === "") return [];
+      return [`${field.label} ${value}`];
+    })
+    .join(" · ");
 
   async function commitSet(set: LocalWorkoutSet, patch: Partial<LocalWorkoutSet>, completed?: boolean) {
     const nextCompleted = completed ?? set.isCompleted;
     await db.workoutSets.update(set.id, { ...patch, isCompleted: nextCompleted, ...dirtyStamp() });
     await touchWorkout(workoutId);
-    if (completed && set.type !== "warmup") {
-      const working = [...sets].filter((row) => row.type === "working" || row.type === "amrap").sort((a, b) => a.order - b.order);
-      if (working[0]?.id === set.id) await generateWarmups(block.id, patch.weight ?? set.weight);
-    }
     if (completed) useRestTimer.getState().start(restFor(restSec));
   }
 
@@ -236,42 +272,79 @@ function ExerciseBlock({
   }
 
   return (
-    <article ref={setNodeRef} style={style} className="rounded-2xl border border-border bg-card p-3">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="min-w-0 truncate text-lg font-semibold">{name}</h2>
-        <button type="button" className="h-11 shrink-0 px-2 text-sm text-muted-foreground" {...attributes} {...listeners}>
-          Move
-        </button>
+    <article className="rounded-2xl border border-border bg-card p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="truncate text-lg font-semibold">{name}</h2>
+          {customText ? <p className="mt-1 text-sm text-muted-foreground">Custom: {customText}</p> : null}
+        </div>
+        <div className="flex shrink-0 items-center">
+          {setupFields.length > 0 ? (
+            <button type="button" className="h-11 w-11 text-lg leading-none text-muted-foreground" aria-label="Custom" onClick={() => setCustomOpen(true)}>
+              ···
+            </button>
+          ) : null}
+          {onMoveUp || onMoveDown ? (
+            <div className="flex flex-col">
+              <button
+                type="button"
+                className="flex h-7 w-7 items-center justify-center text-muted-foreground disabled:opacity-20"
+                aria-label={`Move ${name} up`}
+                disabled={!onMoveUp}
+                onClick={onMoveUp}
+              >
+                <ChevronUp className="h-3.5 w-3.5" strokeWidth={2.5} />
+              </button>
+              <button
+                type="button"
+                className="flex h-7 w-7 items-center justify-center text-muted-foreground disabled:opacity-20"
+                aria-label={`Move ${name} down`}
+                disabled={!onMoveDown}
+                onClick={onMoveDown}
+              >
+                <ChevronDown className="h-3.5 w-3.5" strokeWidth={2.5} />
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
       {setupFields.length > 0 ? (
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          {setupFields.map((field) =>
-            field.type === "enum" ? (
-              <NativeSelect
-                key={field.id}
-                aria-label={field.label}
-                value={String(block.setupValues[field.label] ?? "")}
-                onChange={(event) => void changeSetup(field.label, event.target.value)}
-              >
-                <option value="">{field.label}</option>
-                {field.options.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </NativeSelect>
-            ) : (
-              <input
-                key={field.id}
-                aria-label={field.label}
-                placeholder={field.label}
-                defaultValue={String(block.setupValues[field.label] ?? "")}
-                className="h-11 min-w-0 rounded-xl border border-input bg-surface-elevated px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onBlur={(event) => void changeSetup(field.label, event.target.value.trim())}
-              />
-            ),
-          )}
-        </div>
+        <Sheet open={customOpen} onOpenChange={setCustomOpen}>
+          <SheetContent>
+            <SheetHeader>
+              <SheetTitle>Custom</SheetTitle>
+              <SheetDescription>{name}</SheetDescription>
+            </SheetHeader>
+            <div className="mt-4 flex flex-col gap-3">
+              {setupFields.map((field) =>
+                field.type === "enum" ? (
+                  <NativeSelect
+                    key={field.id}
+                    aria-label={field.label}
+                    value={String(block.setupValues[field.label] ?? "")}
+                    onChange={(event) => void changeSetup(field.label, event.target.value)}
+                  >
+                    <option value="">{field.label}</option>
+                    {field.options.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                ) : (
+                  <input
+                    key={field.id}
+                    aria-label={field.label}
+                    placeholder={field.label}
+                    defaultValue={String(block.setupValues[field.label] ?? "")}
+                    className="h-11 min-w-0 rounded-xl border border-input bg-surface-elevated px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onBlur={(event) => void changeSetup(field.label, event.target.value.trim())}
+                  />
+                ),
+              )}
+            </div>
+          </SheetContent>
+        </Sheet>
       ) : null}
       <div className="mt-3 flex h-11 items-center justify-between rounded-xl bg-surface-elevated px-3">
         <span className="text-sm text-muted-foreground">Rest</span>
@@ -302,6 +375,11 @@ function ExerciseBlock({
       <Button type="button" className="mt-3 w-full" variant="secondary" onClick={() => void addSet(false)}>
         Add set
       </Button>
+      {onRemove ? (
+        <Button type="button" className="mt-2 w-full" variant="danger" onClick={onRemove}>
+          Remove exercise
+        </Button>
+      ) : null}
     </article>
   );
 }
