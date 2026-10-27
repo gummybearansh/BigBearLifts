@@ -16,7 +16,7 @@ const WORKOUT_NOTE = {
 
 const MISSED_NOTE = {
   title: "Nothing logged",
-  body: "It's 9. No session today. The program showed up. You didn't.",
+  body: "It's 9:00 pm. No session today. The program showed up. You didn't.",
   tag: "bbl-missed",
 };
 

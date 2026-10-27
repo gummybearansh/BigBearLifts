@@ -105,21 +105,9 @@ function SessionRows({
     scrollMargin,
   });
   const items = virtualizer.getVirtualItems();
-  const first = items[0]?.index ?? 0;
-  let sticky = "Sessions";
-  for (let index = first; index >= 0; index -= 1) {
-    const row = rows[index];
-    if (row?.kind === "week") {
-      sticky = row.label;
-      break;
-    }
-  }
 
   return (
     <div ref={listRef}>
-      <p className="sticky top-[calc(3.25rem+env(safe-area-inset-top))] z-20 -mx-4 bg-background/95 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground backdrop-blur">
-        {sticky}
-      </p>
       <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
         {items.map((item) => {
           const row = rows[item.index];

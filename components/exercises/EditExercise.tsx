@@ -6,7 +6,15 @@ import { EmptyState } from "@/components/layout/EmptyState";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { readExercise } from "@/lib/db/exercises";
 
-export function EditExercise({ id }: { id: string }) {
+export function EditExercise({
+  id,
+  returnTo,
+  replaceWorkoutExercise,
+}: {
+  id: string;
+  returnTo?: string;
+  replaceWorkoutExercise?: string;
+}) {
   const exercise = useLiveQuery(() => readExercise(id), [id]);
 
   if (exercise === undefined) {
@@ -29,5 +37,7 @@ export function EditExercise({ id }: { id: string }) {
     );
   }
 
-  return <ExerciseForm initial={exercise} />;
+  return (
+    <ExerciseForm initial={exercise} returnTo={returnTo} replaceWorkoutExercise={replaceWorkoutExercise} />
+  );
 }

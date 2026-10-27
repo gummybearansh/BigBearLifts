@@ -2,8 +2,6 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { Reminders } from "@/components/reminders/Reminders";
 import { SyncProvider } from "@/components/sync/SyncProvider";
 
-export const dynamic = "force-dynamic";
-
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SyncProvider>

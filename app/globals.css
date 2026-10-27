@@ -43,6 +43,17 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 70% 32% at 100% -4%, color-mix(in srgb, var(--primary) 28%, transparent), transparent 58%),
+    radial-gradient(ellipse 46% 24% at 0% 18%, color-mix(in srgb, var(--primary) 10%, transparent), transparent 62%);
+}
+
 * {
   scrollbar-width: none;
 }

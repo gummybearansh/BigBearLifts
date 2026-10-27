@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logFailure } from "@/lib/server/app-log";
 import { applyPush, readChanges } from "@/lib/server/sync";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +23,7 @@ export async function POST(request: Request) {
   try {
     await applyPush(json);
   } catch (error) {
+    await logFailure("sync", error);
     const message = error instanceof Error ? error.message : "Could not sync.";
     return NextResponse.json({ error: message }, { status: 400 });
   }

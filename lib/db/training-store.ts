@@ -1,5 +1,5 @@
 import { isEquipment, isMuscle } from "@/lib/catalog";
-import { db } from "@/lib/db/dexie";
+import { db, withDbRetry } from "@/lib/db/dexie";
 import { pullExercises, pushExercise, pushExerciseDelete } from "@/lib/db/sync-exercises";
 import type { ExerciseRecord } from "@/lib/exercise-record";
 import { createId } from "@/lib/ids";
@@ -128,114 +128,118 @@ async function putIfClean<T extends { id: string; _dirty: boolean }>(
 }
 
 export async function applySyncBundle(bundle: SyncBundle): Promise<void> {
-  const buried = new Set((await db.tombstones.toArray()).map((row) => row.recordId));
-  const buriedExercises = new Set(
-    bundle.workoutExercises.filter((row) => buried.has(row.workoutId)).map((row) => row.id),
-  );
-  await db.transaction(
-    "rw",
-    [db.programs, db.programDays, db.programExercises, db.workouts, db.workoutExercises, db.workoutSets, db.bodyMetrics, db.goals, db.prs, db.videos, db.variants, db.settings],
-    async () => {
-      for (const row of bundle.programs) await putIfClean((key) => db.programs.get(key), (item) => db.programs.put(item), asProgram(row));
-      for (const row of bundle.programDays) await putIfClean((key) => db.programDays.get(key), (item) => db.programDays.put(item), asDay(row));
-      for (const row of bundle.programExercises)
-        await putIfClean((key) => db.programExercises.get(key), (item) => db.programExercises.put(item), asProgramExercise(row));
-      for (const row of bundle.workouts) {
-        if (buried.has(row.id)) continue;
-        await putIfClean((key) => db.workouts.get(key), (item) => db.workouts.put(item), asWorkout(row));
-      }
-      for (const row of bundle.workoutExercises) {
-        if (buried.has(row.workoutId) || buried.has(row.id)) continue;
-        await putIfClean((key) => db.workoutExercises.get(key), (item) => db.workoutExercises.put(item), asWorkoutExercise(row));
-      }
-      for (const row of bundle.workoutSets) {
-        if (buried.has(row.workoutExerciseId) || buriedExercises.has(row.workoutExerciseId)) continue;
-        await putIfClean((key) => db.workoutSets.get(key), (item) => db.workoutSets.put(item), asSet(row));
-      }
-      for (const row of bundle.bodyMetrics) {
-        if (buried.has(row.id)) continue;
-        await putIfClean((key) => db.bodyMetrics.get(key), (item) => db.bodyMetrics.put(item), { ...row, ...cleanStamp(row.updatedAt) });
-      }
-      for (const row of bundle.goals)
-        await putIfClean((key) => db.goals.get(key), (item) => db.goals.put(item), { ...row, ...cleanStamp(row.updatedAt) });
-      for (const row of bundle.prs)
-        await putIfClean((key) => db.prs.get(key), (item) => db.prs.put(item), { ...row, ...cleanStamp(row.updatedAt) });
-      for (const row of bundle.videos)
-        await putIfClean((key) => db.videos.get(key), (item) => db.videos.put(item), { ...row, ...cleanStamp(row.updatedAt) });
-      for (const row of bundle.variants ?? [])
-        await putIfClean((key) => db.variants.get(key), (item) => db.variants.put(item), { ...row, ...cleanStamp(row.updatedAt) });
-      const settings = await db.settings.get("local");
-      if (settings) await db.settings.put({ ...settings, lastSync: bundle.serverTime });
-    },
-  );
+  return withDbRetry(async () => {
+    const buried = new Set((await db.tombstones.toArray()).map((row) => row.recordId));
+    const buriedExercises = new Set(
+      bundle.workoutExercises.filter((row) => buried.has(row.workoutId)).map((row) => row.id),
+    );
+    await db.transaction(
+      "rw",
+      [db.programs, db.programDays, db.programExercises, db.workouts, db.workoutExercises, db.workoutSets, db.bodyMetrics, db.goals, db.prs, db.videos, db.variants, db.settings],
+      async () => {
+        for (const row of bundle.programs) await putIfClean((key) => db.programs.get(key), (item) => db.programs.put(item), asProgram(row));
+        for (const row of bundle.programDays) await putIfClean((key) => db.programDays.get(key), (item) => db.programDays.put(item), asDay(row));
+        for (const row of bundle.programExercises)
+          await putIfClean((key) => db.programExercises.get(key), (item) => db.programExercises.put(item), asProgramExercise(row));
+        for (const row of bundle.workouts) {
+          if (buried.has(row.id)) continue;
+          await putIfClean((key) => db.workouts.get(key), (item) => db.workouts.put(item), asWorkout(row));
+        }
+        for (const row of bundle.workoutExercises) {
+          if (buried.has(row.workoutId) || buried.has(row.id)) continue;
+          await putIfClean((key) => db.workoutExercises.get(key), (item) => db.workoutExercises.put(item), asWorkoutExercise(row));
+        }
+        for (const row of bundle.workoutSets) {
+          if (buried.has(row.workoutExerciseId) || buriedExercises.has(row.workoutExerciseId)) continue;
+          await putIfClean((key) => db.workoutSets.get(key), (item) => db.workoutSets.put(item), asSet(row));
+        }
+        for (const row of bundle.bodyMetrics) {
+          if (buried.has(row.id)) continue;
+          await putIfClean((key) => db.bodyMetrics.get(key), (item) => db.bodyMetrics.put(item), { ...row, ...cleanStamp(row.updatedAt) });
+        }
+        for (const row of bundle.goals)
+          await putIfClean((key) => db.goals.get(key), (item) => db.goals.put(item), { ...row, ...cleanStamp(row.updatedAt) });
+        for (const row of bundle.prs)
+          await putIfClean((key) => db.prs.get(key), (item) => db.prs.put(item), { ...row, ...cleanStamp(row.updatedAt) });
+        for (const row of bundle.videos)
+          await putIfClean((key) => db.videos.get(key), (item) => db.videos.put(item), { ...row, ...cleanStamp(row.updatedAt) });
+        for (const row of bundle.variants ?? [])
+          await putIfClean((key) => db.variants.get(key), (item) => db.variants.put(item), { ...row, ...cleanStamp(row.updatedAt) });
+        const settings = await db.settings.get("local");
+        if (settings) await db.settings.put({ ...settings, lastSync: bundle.serverTime });
+      },
+    );
+  });
 }
 
 async function pushDirtyTraining(): Promise<void> {
-  const [programs, programDays, programExercises, workouts, workoutExercises, workoutSets, bodyMetrics, goals, prs, variants] =
-    await Promise.all([
-      db.programs.filter((row) => row._dirty).toArray(),
-      db.programDays.filter((row) => row._dirty).toArray(),
-      db.programExercises.filter((row) => row._dirty).toArray(),
-      db.workouts.filter((row) => row._dirty).toArray(),
-      db.workoutExercises.filter((row) => row._dirty).toArray(),
-      db.workoutSets.filter((row) => row._dirty).toArray(),
-      db.bodyMetrics.filter((row) => row._dirty).toArray(),
-      db.goals.filter((row) => row._dirty).toArray(),
-      db.prs.filter((row) => row._dirty).toArray(),
-      db.variants.filter((row) => row._dirty).toArray(),
-    ]);
+  return withDbRetry(async () => {
+    const [programs, programDays, programExercises, workouts, workoutExercises, workoutSets, bodyMetrics, goals, prs, variants] =
+      await Promise.all([
+        db.programs.filter((row) => row._dirty).toArray(),
+        db.programDays.filter((row) => row._dirty).toArray(),
+        db.programExercises.filter((row) => row._dirty).toArray(),
+        db.workouts.filter((row) => row._dirty).toArray(),
+        db.workoutExercises.filter((row) => row._dirty).toArray(),
+        db.workoutSets.filter((row) => row._dirty).toArray(),
+        db.bodyMetrics.filter((row) => row._dirty).toArray(),
+        db.goals.filter((row) => row._dirty).toArray(),
+        db.prs.filter((row) => row._dirty).toArray(),
+        db.variants.filter((row) => row._dirty).toArray(),
+      ]);
 
-  const dirty =
-    programs.length +
-    programDays.length +
-    programExercises.length +
-    workouts.length +
-    workoutExercises.length +
-    workoutSets.length +
-    bodyMetrics.length +
-    goals.length +
-    prs.length +
-    variants.length;
-  if (dirty === 0) return;
+    const dirty =
+      programs.length +
+      programDays.length +
+      programExercises.length +
+      workouts.length +
+      workoutExercises.length +
+      workoutSets.length +
+      bodyMetrics.length +
+      goals.length +
+      prs.length +
+      variants.length;
+    if (dirty === 0) return;
 
-  const response = await fetch("/api/sync", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      programs,
-      programDays,
-      programExercises,
-      workouts,
-      workoutExercises,
-      workoutSets,
-      bodyMetrics,
-      goals,
-      prs,
-      variants,
-    }),
+    const response = await fetch("/api/sync", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        programs,
+        programDays,
+        programExercises,
+        workouts,
+        workoutExercises,
+        workoutSets,
+        bodyMetrics,
+        goals,
+        prs,
+        variants,
+      }),
+    });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(body?.error ?? "Could not sync.");
+    }
+
+    const mark = nowIso();
+    await db.transaction(
+      "rw",
+      [db.programs, db.programDays, db.programExercises, db.workouts, db.workoutExercises, db.workoutSets, db.bodyMetrics, db.goals, db.prs, db.variants],
+      async () => {
+        if (programs.length) await db.programs.bulkPut(programs.map((row) => ({ ...row, _dirty: false, _syncedAt: mark })));
+        if (programDays.length) await db.programDays.bulkPut(programDays.map((row) => ({ ...row, _dirty: false, _syncedAt: mark })));
+        if (programExercises.length) await db.programExercises.bulkPut(programExercises.map((row) => ({ ...row, _dirty: false, _syncedAt: mark })));
+        if (workouts.length) await db.workouts.bulkPut(workouts.map((row) => ({ ...row, _dirty: false, _syncedAt: mark })));
+        if (workoutExercises.length) await db.workoutExercises.bulkPut(workoutExercises.map((row) => ({ ...row, _dirty: false, _syncedAt: mark })));
+        if (workoutSets.length) await db.workoutSets.bulkPut(workoutSets.map((row) => ({ ...row, _dirty: false, _syncedAt: mark })));
+        if (bodyMetrics.length) await db.bodyMetrics.bulkPut(bodyMetrics.map((row) => ({ ...row, _dirty: false, _syncedAt: mark })));
+        if (goals.length) await db.goals.bulkPut(goals.map((row) => ({ ...row, _dirty: false, _syncedAt: mark })));
+        if (prs.length) await db.prs.bulkPut(prs.map((row) => ({ ...row, _dirty: false, _syncedAt: mark })));
+        if (variants.length) await db.variants.bulkPut(variants.map((row) => ({ ...row, _dirty: false, _syncedAt: mark })));
+      },
+    );
   });
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(body?.error ?? "Could not sync.");
-  }
-
-  const mark = nowIso();
-  await db.transaction(
-    "rw",
-    [db.programs, db.programDays, db.programExercises, db.workouts, db.workoutExercises, db.workoutSets, db.bodyMetrics, db.goals, db.prs, db.variants],
-    async () => {
-      for (const row of programs) await db.programs.update(row.id, { _dirty: false, _syncedAt: mark });
-      for (const row of programDays) await db.programDays.update(row.id, { _dirty: false, _syncedAt: mark });
-      for (const row of programExercises) await db.programExercises.update(row.id, { _dirty: false, _syncedAt: mark });
-      for (const row of workouts) await db.workouts.update(row.id, { _dirty: false, _syncedAt: mark });
-      for (const row of workoutExercises) await db.workoutExercises.update(row.id, { _dirty: false, _syncedAt: mark });
-      for (const row of workoutSets) await db.workoutSets.update(row.id, { _dirty: false, _syncedAt: mark });
-      for (const row of bodyMetrics) await db.bodyMetrics.update(row.id, { _dirty: false, _syncedAt: mark });
-      for (const row of goals) await db.goals.update(row.id, { _dirty: false, _syncedAt: mark });
-      for (const row of prs) await db.prs.update(row.id, { _dirty: false, _syncedAt: mark });
-      for (const row of variants) await db.variants.update(row.id, { _dirty: false, _syncedAt: mark });
-    },
-  );
 }
 
 let syncing = false;
@@ -244,79 +248,83 @@ export async function syncTraining(): Promise<void> {
   if (syncing || typeof navigator !== "undefined" && !navigator.onLine) return;
   syncing = true;
   try {
-    await ensureSettings();
-    await dropWeighInsBeforeJune();
-    await pushTombstones();
-    await pullExercises();
-    const settings = await db.settings.get("local");
-    const since = settings?.lastSync ?? "1970-01-01T00:00:00.000Z";
-    const response = await fetch(`/api/sync?since=${encodeURIComponent(since)}`);
-    if (!response.ok) throw new Error("Could not refresh.");
-    const bundle = (await response.json()) as SyncBundle;
-    await applySyncBundle(bundle);
-    const dirtyExercises = await db.exercises.filter((row) => row._dirty).toArray();
-    for (const exercise of dirtyExercises) {
-      if (!isMuscle(exercise.primaryMuscle) || !isEquipment(exercise.equipment)) continue;
-      const fields = await db.setupFields.where("exerciseId").equals(exercise.id).toArray();
-      const variants = await db.variants.where("exerciseId").equals(exercise.id).toArray();
-      const existing: ExerciseRecord = {
-        id: exercise.id,
-        name: exercise.name,
-        primaryMuscle: exercise.primaryMuscle,
-        secondaryMuscles: exercise.secondaryMuscles.filter(isMuscle),
-        equipment: exercise.equipment,
-        isFavorite: exercise.isFavorite,
-        isAssisted: exercise.isAssisted,
-        isCustom: exercise.isCustom,
-        restSec: exercise.restSec,
-        warmupScheme: exercise.warmupScheme,
-        createdAt: exercise.createdAt,
-        updatedAt: exercise.updatedAt,
-        setupFields: fields,
-        variants,
-      };
-      await pushExercise(
-        {
+    await withDbRetry(async () => {
+      await ensureSettings();
+      await dropWeighInsBeforeJune();
+      await pushTombstones();
+      await pullExercises();
+      const settings = await db.settings.get("local");
+      const since = settings?.lastSync ?? "1970-01-01T00:00:00.000Z";
+      const response = await fetch(`/api/sync?since=${encodeURIComponent(since)}`);
+      if (!response.ok) throw new Error("Could not refresh.");
+      const bundle = (await response.json()) as SyncBundle;
+      await applySyncBundle(bundle);
+      const dirtyExercises = await db.exercises.filter((row) => row._dirty).toArray();
+      for (const exercise of dirtyExercises) {
+        if (!isMuscle(exercise.primaryMuscle) || !isEquipment(exercise.equipment)) continue;
+        const fields = await db.setupFields.where("exerciseId").equals(exercise.id).toArray();
+        const variants = await db.variants.where("exerciseId").equals(exercise.id).toArray();
+        const existing: ExerciseRecord = {
           id: exercise.id,
           name: exercise.name,
           primaryMuscle: exercise.primaryMuscle,
-          secondaryMuscles: existing.secondaryMuscles,
+          secondaryMuscles: exercise.secondaryMuscles.filter(isMuscle),
           equipment: exercise.equipment,
           isFavorite: exercise.isFavorite,
           isAssisted: exercise.isAssisted,
+          isCustom: exercise.isCustom,
           restSec: exercise.restSec,
-          setupFields: fields.map((field) => ({
-            id: field.id,
-            label: field.label,
-            type: field.type,
-            options: field.options,
-            order: field.order,
-            defaultValue: field.defaultValue,
-          })),
-        },
-        existing,
-      );
-    }
-    await pushDirtyTraining();
+          warmupScheme: exercise.warmupScheme,
+          createdAt: exercise.createdAt,
+          updatedAt: exercise.updatedAt,
+          setupFields: fields,
+          variants,
+        };
+        await pushExercise(
+          {
+            id: exercise.id,
+            name: exercise.name,
+            primaryMuscle: exercise.primaryMuscle,
+            secondaryMuscles: existing.secondaryMuscles,
+            equipment: exercise.equipment,
+            isFavorite: exercise.isFavorite,
+            isAssisted: exercise.isAssisted,
+            restSec: exercise.restSec,
+            setupFields: fields.map((field) => ({
+              id: field.id,
+              label: field.label,
+              type: field.type,
+              options: field.options,
+              order: field.order,
+              defaultValue: field.defaultValue,
+            })),
+          },
+          existing,
+        );
+      }
+      await pushDirtyTraining();
+    });
   } finally {
     syncing = false;
   }
 }
 
 async function pushTombstones(): Promise<void> {
-  const tombstones = await db.tombstones.filter((row) => row._dirty).toArray();
-  if (!tombstones.length) return;
-  const response = await fetch("/api/sync", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      tombstones: tombstones.map((row) => ({ table: row.table, recordId: row.recordId })),
-    }),
-  });
-  if (!response.ok) throw new Error("Could not sync.");
-  const mark = nowIso();
-  await db.transaction("rw", db.tombstones, async () => {
-    for (const row of tombstones) await db.tombstones.update(row.id, { _dirty: false, _syncedAt: mark });
+  return withDbRetry(async () => {
+    const tombstones = await db.tombstones.filter((row) => row._dirty).toArray();
+    if (!tombstones.length) return;
+    const response = await fetch("/api/sync", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        tombstones: tombstones.map((row) => ({ table: row.table, recordId: row.recordId })),
+      }),
+    });
+    if (!response.ok) throw new Error("Could not sync.");
+    const mark = nowIso();
+    await db.transaction("rw", db.tombstones, async () => {
+      await db.tombstones.bulkPut(tombstones.map((row) => ({ ...row, _dirty: false, _syncedAt: mark })));
+    });
   });
 }
 
@@ -425,6 +433,42 @@ export async function addExerciseToWorkout(workoutId: string, exerciseId: string
     });
     await db.workoutSets.bulkAdd(sets);
     await db.workouts.update(workoutId, stamp);
+  });
+}
+
+export async function retargetWorkoutExercise(workoutExerciseId: string, exerciseId: string): Promise<void> {
+  const block = await db.workoutExercises.get(workoutExerciseId);
+  if (!block) return;
+  const stamp = dirtyStamp();
+  await db.transaction("rw", [db.workoutExercises, db.workouts], async () => {
+    await db.workoutExercises.update(workoutExerciseId, { exerciseId, ...stamp });
+    await db.workouts.update(block.workoutId, stamp);
+  });
+}
+
+export async function adoptExerciseInProgram(fromId: string, toId: string): Promise<void> {
+  if (fromId === toId) return;
+  const rows = await db.programExercises.where("exerciseId").equals(fromId).toArray();
+  if (!rows.length) return;
+  const stamp = dirtyStamp();
+  await db.programExercises.bulkPut(rows.map((row) => ({ ...row, exerciseId: toId, ...stamp })));
+}
+
+export async function addExerciseToProgramDay(dayId: string, exerciseId: string): Promise<void> {
+  const existing = await db.programExercises.where("programDayId").equals(dayId).toArray();
+  const order = existing.reduce((max, row) => Math.max(max, row.order), -1) + 1;
+  await db.programExercises.add({
+    id: createId(),
+    programDayId: dayId,
+    exerciseId,
+    order,
+    targetSets: 3,
+    targetRepsMin: 8,
+    targetRepsMax: 8,
+    notes: null,
+    presetSetup: null,
+    setStyle: "straight",
+    ...dirtyStamp(),
   });
 }
 

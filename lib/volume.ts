@@ -23,7 +23,7 @@ export type VolumeEntry = {
 };
 
 function countsTowardVolume(type: string): boolean {
-  return type === "working" || type === "amrap" || type === "drop" || type === "failure";
+  return type === "working" || type === "amrap" || type === "drop" || type === "failure" || type === "negative";
 }
 
 function loadVolume(weight: number, reps: number, exercise: VolumeExercise, bodyweight: number): number {

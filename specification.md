@@ -1,14 +1,13 @@
-# BigBearLifts — Project Specification
-
-A personal, mobile-first, offline-capable strength training PWA with full workout logging, analytics, body metrics, and progress video archiving to Google Drive via a self-hosted EC2 backend.
+# BigBearLifts — video archiving to Google Drive via a self-hosted EC2 backend.
 
 ---
 
-## 1. Vision & Goals
+## 1. Vision ++&++ Goals
 
 **What it is:** A single-user strength training app built to replace messy notes-app logging. Mobile-first, gym-friendly, fast to log, and rich with analytics. Self-hosted on EC2, installable to iPhone home screen as a PWA, with a backend that handles auth, sync, video uploads, and automated Google Drive archival.
 
 **Primary goals:**
+
 - Log workouts in under 5 taps per set
 - Auto-fill from last same-day workout (Push2 pulls last Push2)
 - Track progress, volume, poundage, PRs, and body metrics over time
@@ -16,6 +15,7 @@ A personal, mobile-first, offline-capable strength training PWA with full workou
 - Feel like a real native app — offline-first, dark, fast, polished
 
 **Non-goals:**
+
 - Multi-user / social features
 - Nutrition logging
 - Video exercise tutorials
@@ -23,9 +23,12 @@ A personal, mobile-first, offline-capable strength training PWA with full workou
 
 ---
 
+
+
 ## 2. Tech Stack
 
 **Frontend**
+
 - Next.js 14 (App Router) + TypeScript
 - Tailwind CSS + shadcn/ui
 - Recharts for analytics graphs
@@ -35,6 +38,7 @@ A personal, mobile-first, offline-capable strength training PWA with full workou
 - next-pwa for PWA / service worker
 
 **Backend**
+
 - Next.js API routes (same app, deployed on EC2)
 - PostgreSQL (Docker container on EC2)
 - Prisma ORM
@@ -43,6 +47,7 @@ A personal, mobile-first, offline-capable strength training PWA with full workou
 - VAPID Web Push for notifications
 
 **Infrastructure**
+
 - AWS EC2 (Ubuntu 22.04)
 - Docker + docker-compose
 - Caddy reverse proxy (auto Let's Encrypt TLS)
@@ -51,12 +56,15 @@ A personal, mobile-first, offline-capable strength training PWA with full workou
 - Backup: `pg_dump` nightly to local + optional S3
 
 **Sync & Video Pipeline**
+
 - Videos upload directly to EC2 disk (`/var/www/bigbearlifts/uploads/`)
 - Cron runs `rclone move` every 15 min → Google Drive (service account, hidden app folder)
 - Files deleted from EC2 after successful transfer
 - Manual "Cleanup" dashboard in the app shows EC2 video inventory + trigger buttons
 
 ---
+
+
 
 ## 3. Architecture
 
@@ -92,13 +100,18 @@ A personal, mobile-first, offline-capable strength training PWA with full workou
 ```
 
 **Data flow summary:**
+
 - Every action logs to IndexedDB first (instant)
 - Sync engine pushes to Postgres when online
 - Videos upload directly to EC2 → cron archives to GDrive → cleanup
 
 ---
 
+
+
 ## 4. Data Model
+
+
 
 ### Core Entities
 
@@ -255,11 +268,14 @@ model PR {
 
 ---
 
+
+
 ## 5. Screen Specs
 
 Mobile-first. Bottom nav with 5 tabs: **Today**, **Program**, **Progress**, **Body**, **More**.
 
 ### 5.1 Today (Home)
+
 - Big "Start Today's Workout" card → detects next in rotation
   - e.g. last was Pull1 → shows "Push2" as next
   - Tapping opens Active Workout with all exercises pre-filled from last Push2 (greyed)
@@ -268,10 +284,14 @@ Mobile-first. Bottom nav with 5 tabs: **Today**, **Program**, **Progress**, **Bo
 - Quick weigh-in button
 - Next reminder time
 
+
+
 ### 5.2 Active Workout
+
 Header: workout label · elapsed · Finish button
 
 Per exercise card (draggable to reorder):
+
 ```
 ▸ Incline Bench Press           [Angle: 90-1]   ⓘ
    Warmups (auto)
@@ -300,21 +320,29 @@ Rest timer: floating pill at bottom, counts down from preset (default 90s, per-e
 Finish → confirm → saves, syncs, updates PRs.
 
 ### 5.3 Program
+
 - Shows active program (PPL) with day cards
 - Tap day → exercise list with setup fields, targets
 - Edit day: add/remove/reorder exercises, edit targets
 - Program templates: import from JSON
 - Create new program
 
+
+
 ### 5.4 Exercise Library
+
 - Search bar
 - Filter chips: muscle group, equipment, favorite
 - List view with primary muscle + equipment
 - Tap → detail: PRs, history chart, variants, setup fields
 - "New Exercise" button: name, muscle groups, equipment, custom setup fields
 
+
+
 ### 5.5 Progress
+
 Tabs: **Lifts** · **Volume** · **Sessions** · **Calendar**
+
 - Lifts: pick exercise → line chart of est. 1RM, top set, total volume over time
 - Volume: weekly volume per muscle group (stacked bar)
 - Sessions: list of all workouts with volume, duration, sets
@@ -322,7 +350,10 @@ Tabs: **Lifts** · **Volume** · **Sessions** · **Calendar**
 - Poundage per session + per lift displayed prominently
 - PR badges: gold star on PR sets in history
 
+
+
 ### 5.6 Body
+
 - Weigh-in input card (kg + optional BF% + optional SMM)
 - Weight graph with 7-day smoothed trendline + raw scatter
 - BMI / FFMI calculation
@@ -330,7 +361,10 @@ Tabs: **Lifts** · **Volume** · **Sessions** · **Calendar**
 - Body fat % chart
 - SMM chart
 
+
+
 ### 5.7 Videos
+
 - Grid of progress videos (thumbnails)
 - Record button → in-app camera → upload directly to EC2
 - Or upload from gallery
@@ -339,23 +373,34 @@ Tabs: **Lifts** · **Volume** · **Sessions** · **Calendar**
 - Cleanup button → shows EC2 storage used, list of "synced" videos, delete-from-EC2 action
 - Storage dashboard: EC2 total, GDrive total synced
 
+
+
 ### 5.8 More
+
 - Settings: accent color, default rest time, units (kg/lb), plate inventory
 - Notifications: workout reminder time, weigh-in reminder time
 - Data: Export JSON, Export CSV, Import
 - Account: change password
 - About
 
+
+
 ### 5.9 Auth
+
 - Single password login screen
 - Session cookie via NextAuth
 - No signup — user created via seed script
 
 ---
 
+
+
 ## 6. Feature Specs (Behavioral Detail)
 
+
+
 ### 6.1 Warmup Auto-Generator
+
 - Triggered when first working set of an exercise is logged
 - Uses first working set weight
 - Default: 3 warmups at 40%, 60%, 80% of working weight
@@ -365,19 +410,28 @@ Tabs: **Lifts** · **Volume** · **Sessions** · **Calendar**
 - Warmups don't count toward volume or PRs
 - Editable per-exercise (change percentages or count)
 
+
+
 ### 6.2 Quick Log
+
 - Small button on each exercise card
 - Copies last completed set's weight + reps into a new set
 - One tap → set added, marked complete, rest timer starts
 
+
+
 ### 6.3 Today's Workout
+
 - Reads ProgramDay rotation order
 - Finds last workout with same programDayId
 - Pre-loads all exercises, variants, setup values
 - Renders last session's sets greyed as reference (not editable, just shown)
 - User logs fresh sets below each greyed set
 
+
+
 ### 6.4 Setup Fields (Structured)
+
 - Defined per exercise in library
 - Types: number, text, enum
 - Displayed as chips on active workout screen
@@ -385,30 +439,42 @@ Tabs: **Lifts** · **Volume** · **Sessions** · **Calendar**
 - Editable inline (tap chip → input)
 - Variants tracked separately for PRs/graphs
 
+
+
 ### 6.5 Rest Timer
+
 - Auto-starts on set complete
 - Default 90s, per-exercise override in library
 - Floating pill: countdown + skip + +30s
 - Sound + vibration on finish (navigator.vibrate)
 - Survives tab background (uses timestamp diff, not setInterval)
 
+
+
 ### 6.6 Plate Calculator
+
 - Input: total weight
 - Config: bar weight (default 20kg), available plates (default 25/20/15/10/5/2.5/1.25 kg)
 - Output: plates per side + remainder warning
 - Reachable from any warmup/working set row
 
+
+
 ### 6.7 Notifications
+
 - Daily workout reminder at user-set time (default 18:00)
 - Daily weigh-in reminder at user-set time (default 07:00)
 - VAPID Web Push via service worker
 - iOS 16.4+ requires PWA install for push
 - Toggle per notification type
 
+
+
 ### 6.8 Video Upload & Archival
+
 - In-app camera (getUserMedia) or file picker
-- Uploads directly to EC2 via `/api/videos/upload` (multipart)
-- On success: record in DB with status `on-ec2`
+  - Uploads directly to EC2 via `/api/videos/upload` (multipart)
+  - On success: record in DB with status `on-ec2`
 - Cron on EC2 every 15 min: `rclone move /uploads/ gdrive:bigbearlifts-progress/`
 - After move, cron marks videos as `synced` in DB
 - Videos screen shows storage dashboard
@@ -416,14 +482,20 @@ Tabs: **Lifts** · **Volume** · **Sessions** · **Calendar**
 - Google Drive uses service account with `drive.appfolder` scope (hidden folder)
 - Files named: `YYYY-MM-DD_HHMM_<exercise>_<id>.mp4`
 
+
+
 ### 6.9 Sync Engine (Local-First)
+
 - All writes hit Dexie first
 - Background sync worker pushes dirty records to `/api/sync` every 5s when online
 - Pulls server changes (updatedAt > lastSync) on app open
 - Conflict: last-write-wins by updatedAt
 - Offline queue persists across app restarts
 
+
+
 ### 6.10 PR Detection
+
 - On workout finish, scan new sets:
   - 1RM PR: Epley `w * (1 + r/30)`
   - Weight PR: heaviest weight for ≥1 rep
@@ -431,7 +503,10 @@ Tabs: **Lifts** · **Volume** · **Sessions** · **Calendar**
   - Volume PR: highest session volume for exercise
 - Store in PR table, badge on session history
 
+
+
 ### 6.11 Analytics
+
 - Est. 1RM graph: Epley, per exercise, over time
 - Volume graph: sum(weight × reps) per week per muscle group
 - Poundage: session total + exercise total
@@ -439,6 +514,8 @@ Tabs: **Lifts** · **Volume** · **Sessions** · **Calendar**
 - Streak: consecutive days with a logged workout (allow 1 rest day gap)
 
 ---
+
+
 
 ## 7. Design System
 
@@ -465,12 +542,15 @@ Tabs: **Lifts** · **Volume** · **Sessions** · **Calendar**
 **Motion:** Framer Motion — 150-200ms transitions. Set complete → subtle scale + checkmark. Screen transitions → slide from right.
 
 **Mobile-first rules:**
+
 - Min tap target 44px
 - Bottom nav always visible except during Active Workout
 - No hover states as primary interactions
 - One-handed reach: primary actions in bottom 60% of screen
 
 ---
+
+
 
 ## 8. PWA Configuration
 
@@ -486,7 +566,11 @@ Tabs: **Lifts** · **Volume** · **Sessions** · **Calendar**
 
 ---
 
+
+
 ## 9. Backend Specs
+
+
 
 ### API Routes
 
@@ -528,19 +612,28 @@ DELETE /api/push/unsubscribe
 POST   /api/push/test
 ```
 
+
+
 ### Auth
+
 - NextAuth v5 credentials provider
 - Single user seeded via `prisma/seed.ts` (username + bcrypt hash from env)
 - Session cookie, 30-day expiry, httpOnly, secure, sameSite lax
 
+
+
 ### Video Upload
+
 - Max size 500MB
 - Accepted: mp4, mov
 - Stored at `/var/www/bigbearlifts/uploads/<uuid>.mp4`
 - Metadata in Postgres
 - Served for playback via signed short-lived URL (Next.js route handler streams file)
 
+
+
 ### Cron Jobs (EC2)
+
 ```cron
 # Sync videos to GDrive every 15 min
 */15 * * * * rclone move /var/www/bigbearlifts/uploads/ gdrive:bigbearlifts-progress/ --min-age 2m --log-file /var/log/rclone.log
@@ -549,7 +642,10 @@ POST   /api/push/test
 0 3 * * * pg_dump -U bbl bigbearlifts | gzip > /backups/bbl-$(date +\%F).sql.gz
 ```
 
+
+
 ### rclone Setup (Service Account)
+
 1. Google Cloud Console → create project → enable Drive API
 2. Create service account → download JSON key
 3. In Google Drive, create folder "BigBearLifts Progress"
@@ -558,6 +654,8 @@ POST   /api/push/test
 6. Test: `rclone lsd gdrive:`
 
 ---
+
+
 
 ## 10. Folder Structure
 
@@ -641,6 +739,8 @@ bigbearlifts/
 
 ---
 
+
+
 ## 11. Environment Variables
 
 ```env
@@ -670,6 +770,8 @@ NEXT_PUBLIC_ACCENT=#FF5A1F
 
 ---
 
+
+
 ## 12. Seed Data
 
 The live catalog and program are not in git. Put them in gitignored `data/personal-seed.json`. `data/personal-seed.example.json` shows the shape with placeholder names only.
@@ -679,20 +781,24 @@ The live catalog and program are not in git. Put them in gitignored `data/person
 Not stored in this repository. Copy `data/personal-seed.example.json` to `data/personal-seed.json` and fill in your own catalog and days. The app reads that file at seed time. Do not commit it.
 
 ### Seed Body Metric
+
 - Optional. Set `SEED_METRIC_DATE` and `SEED_METRIC_WEIGHT_KG` in `.env`. Do not commit the values.
 
-
 ---
+
+
 
 ## 13. Milestones (Build Order)
 
 **M1 — Shell & Auth**
+
 - Next.js + Tailwind + shadcn scaffold
 - Dark theme + bottom nav
 - NextAuth single password
 - Empty screens routed
 
 **M2 — Exercise Library**
+
 - Prisma schema + migrations
 - Seed data
 - Library list/search/filter
@@ -700,11 +806,13 @@ Not stored in this repository. Copy `data/personal-seed.example.json` to `data/p
 - Create/edit exercise
 
 **M3 — Program**
+
 - Program builder UI
 - Program day editor
 - Rotation logic
 
 **M4 — Active Workout (Core)**
+
 - Dexie local schema
 - Today's workout launcher
 - Active workout screen
@@ -717,12 +825,14 @@ Not stored in this repository. Copy `data/personal-seed.example.json` to `data/p
 - Finish & save
 
 **M5 — Sync Engine**
+
 - Dirty queue
 - Push/pull endpoints
 - Conflict resolution
 - Background sync
 
 **M6 — Analytics**
+
 - PR detection
 - Lift charts (est 1RM)
 - Volume per muscle chart
@@ -732,12 +842,14 @@ Not stored in this repository. Copy `data/personal-seed.example.json` to `data/p
 - Streak
 
 **M7 — Body Metrics**
+
 - Weigh-in input
 - Weight graph + 7d smoothing
 - BMI / FFMI
 - Goals
 
 **M8 — Videos**
+
 - Upload endpoint
 - Video list screen
 - EC2 storage dashboard
@@ -745,6 +857,7 @@ Not stored in this repository. Copy `data/personal-seed.example.json` to `data/p
 - Sync + cleanup buttons
 
 **M9 — PWA & Notifications**
+
 - Manifest + icons + splash
 - Service worker
 - Offline support
@@ -752,6 +865,7 @@ Not stored in this repository. Copy `data/personal-seed.example.json` to `data/p
 - Daily reminders
 
 **M10 — Deploy**
+
 - Dockerfiles
 - docker-compose
 - Caddy config
@@ -760,6 +874,8 @@ Not stored in this repository. Copy `data/personal-seed.example.json` to `data/p
 - Backup cron
 
 ---
+
+
 
 ## 14. EC2 Deployment Guide
 
@@ -804,6 +920,7 @@ crontab -e
 ```
 
 **Caddyfile:**
+
 ```
 bigbearlifts.yourdomain.com {
     reverse_proxy app:3000
@@ -815,6 +932,7 @@ bigbearlifts.yourdomain.com {
 ```
 
 **docker-compose.yml** (skeleton):
+
 ```yaml
 services:
   app:
@@ -854,6 +972,8 @@ volumes:
 ```
 
 ---
+
+
 
 ## 15. README.md (Repository)
 

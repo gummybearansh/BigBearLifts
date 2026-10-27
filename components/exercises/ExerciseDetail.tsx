@@ -94,9 +94,9 @@ export function ExerciseDetail({ id }: { id: string }) {
           </p>
         ) : null}
         <section className="rounded-2xl border border-border bg-card p-4">
-          <h2 className="text-sm font-medium">Setup</h2>
+          <h2 className="text-sm font-medium">Custom</h2>
           {exercise.setupFields.length === 0 ? (
-            <p className="mt-2 text-sm text-muted-foreground">No setup fields.</p>
+            <p className="mt-2 text-sm text-muted-foreground">None.</p>
           ) : (
             <ul className="mt-3 flex flex-col gap-2">
               {exercise.setupFields.map((field) => (

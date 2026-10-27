@@ -81,7 +81,7 @@ export function ProgramScreen() {
           <ListSkeleton />
         ) : tree && tree.days.length > 0 ? (
           <ul className="overflow-hidden rounded-2xl border border-border bg-card">
-            {tree.days.map((day) => {
+            {tree.days.map((day, index) => {
               const count = tree.exercises.filter((exercise) => exercise.programDayId === day.id).length;
               return (
                 <li key={day.id} className="border-b border-border last:border-b-0">
@@ -91,7 +91,10 @@ export function ProgramScreen() {
                     disabled={opening === day.id}
                     onClick={() => void openDay(day.id)}
                   >
-                    <span className="font-medium">{day.label}</span>
+                    <span className="flex items-center gap-3">
+                      <span className="w-6 text-xs font-medium text-primary">{String(index + 1).padStart(2, "0")}</span>
+                      <span className="font-medium">{day.label}</span>
+                    </span>
                     <span className="text-sm text-muted-foreground">{opening === day.id ? "Opening…" : `${count} exercises`}</span>
                   </button>
                 </li>

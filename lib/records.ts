@@ -4,7 +4,12 @@ export type SyncMeta = {
 };
 
 export type SetStyle = "straight" | "amrap";
-export type SetType = "warmup" | "working" | "amrap" | "drop" | "failure";
+export const SET_TYPES = ["warmup", "working", "amrap", "drop", "failure", "negative"] as const;
+export type SetType = (typeof SET_TYPES)[number];
+
+export function isSetType(value: string): value is SetType {
+  return (SET_TYPES as readonly string[]).includes(value);
+}
 export type UnitSystem = "kg" | "lb";
 export type GoalType = "weight" | "bodyFat";
 export type VideoStatus = "on-ec2" | "synced" | "deleted";

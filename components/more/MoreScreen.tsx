@@ -96,7 +96,7 @@ export function MoreScreen() {
           />
           <div className="rounded-xl bg-surface-elevated px-4 py-3 text-sm">
             <p>Workout reminder at 5:00.</p>
-            <p className="mt-1 text-muted-foreground">If nothing is logged, a second one lands at 9:00. A rest day skips that one.</p>
+            <p className="mt-1 text-muted-foreground">If nothing is logged, a second one lands at 9:00 pm. A rest day skips that one.</p>
           </div>
           <Button
             type="button"

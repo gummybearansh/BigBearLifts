@@ -21,10 +21,16 @@ import {
   type SetupFieldType,
 } from "@/lib/catalog";
 import { saveExerciseLocal } from "@/lib/db/exercises";
+import { addExerciseToProgramDay, addExerciseToWorkout, adoptExerciseInProgram, retargetWorkoutExercise } from "@/lib/db/training-store";
 import { pushExercise, pushExerciseDelete } from "@/lib/db/sync-exercises";
 import type { ExerciseRecord } from "@/lib/exercise-record";
 import { createId } from "@/lib/ids";
 import { exerciseInputSchema } from "@/lib/validators";
+
+function safePath(path: string | undefined, fallback: string): string {
+  if (!path || !path.startsWith("/") || path.startsWith("//")) return fallback;
+  return path;
+}
 
 type DraftField = {
   key: string;
@@ -46,10 +52,24 @@ function draftFromExercise(exercise: ExerciseRecord): DraftField[] {
   }));
 }
 
-export function ExerciseForm({ initial }: { initial?: ExerciseRecord }) {
+export function ExerciseForm({
+  initial,
+  defaultName,
+  returnTo,
+  addToWorkout,
+  addToDay,
+  replaceWorkoutExercise,
+}: {
+  initial?: ExerciseRecord;
+  defaultName?: string;
+  returnTo?: string;
+  addToWorkout?: string;
+  addToDay?: string;
+  replaceWorkoutExercise?: string;
+}) {
   useExerciseSync();
   const router = useRouter();
-  const [name, setName] = useState(initial?.name ?? "");
+  const [name, setName] = useState(initial?.name ?? defaultName ?? "");
   const [primaryMuscle, setPrimaryMuscle] = useState<Muscle>(initial?.primaryMuscle ?? "chest");
   const [secondaryMuscles, setSecondaryMuscles] = useState<Muscle[]>(initial?.secondaryMuscles ?? []);
   const [equipment, setEquipment] = useState<Equipment>(initial?.equipment ?? "barbell");
@@ -113,23 +133,25 @@ export function ExerciseForm({ initial }: { initial?: ExerciseRecord }) {
       return;
     }
 
+    const fork = Boolean(initial && parsed.data.name.trim() !== initial.name.trim());
+    const id = fork ? createId() : payload.id;
     const now = new Date().toISOString();
     const record: ExerciseRecord = {
-      id: payload.id,
+      id,
       name: parsed.data.name,
       primaryMuscle: parsed.data.primaryMuscle,
       secondaryMuscles: parsed.data.secondaryMuscles,
       equipment: parsed.data.equipment,
       isFavorite: parsed.data.isFavorite ?? false,
       isAssisted: parsed.data.isAssisted ?? false,
-      isCustom: initial?.isCustom ?? true,
+      isCustom: fork ? true : (initial?.isCustom ?? true),
       restSec: parsed.data.restSec ?? null,
       warmupScheme: initial?.warmupScheme ?? null,
-      createdAt: initial?.createdAt ?? now,
+      createdAt: fork ? now : (initial?.createdAt ?? now),
       updatedAt: now,
       setupFields: parsed.data.setupFields.map((field) => ({
-        id: field.id ?? createId(),
-        exerciseId: payload.id,
+        id: fork ? createId() : (field.id ?? createId()),
+        exerciseId: id,
         label: field.label,
         type: field.type,
         options: field.options,
@@ -137,17 +159,45 @@ export function ExerciseForm({ initial }: { initial?: ExerciseRecord }) {
         defaultValue: field.defaultValue ?? null,
         updatedAt: now,
       })),
-      variants: initial?.variants ?? [],
+      variants: fork
+        ? (initial?.variants ?? []).map((variant) => ({
+            ...variant,
+            id: createId(),
+            exerciseId: id,
+            createdAt: now,
+            updatedAt: now,
+          }))
+        : (initial?.variants ?? []),
     };
 
     setPending(true);
     await saveExerciseLocal(record, true);
+    const input = {
+      ...parsed.data,
+      id,
+      setupFields: record.setupFields.map((field) => ({
+        id: field.id,
+        label: field.label,
+        type: field.type,
+        options: field.options,
+        order: field.order,
+        defaultValue: field.defaultValue,
+      })),
+    };
     try {
-      const saved = await pushExercise(parsed.data, initial ?? null);
-      router.push(`/exercises/${saved.id}`);
+      const saved = await pushExercise(input, fork ? null : initial ?? null);
+      if (fork && initial) await adoptExerciseInProgram(initial.id, saved.id);
+      if (replaceWorkoutExercise) await retargetWorkoutExercise(replaceWorkoutExercise, saved.id);
+      if (!initial && addToWorkout) await addExerciseToWorkout(addToWorkout, saved.id);
+      if (!initial && addToDay) await addExerciseToProgramDay(addToDay, saved.id);
+      router.push(safePath(returnTo, `/exercises/${saved.id}`));
     } catch (saveError) {
       toast.error(saveError instanceof Error ? saveError.message : "Saved on this phone.");
-      router.push(`/exercises/${record.id}`);
+      if (fork && initial) await adoptExerciseInProgram(initial.id, record.id);
+      if (replaceWorkoutExercise) await retargetWorkoutExercise(replaceWorkoutExercise, record.id);
+      if (!initial && addToWorkout) await addExerciseToWorkout(addToWorkout, record.id);
+      if (!initial && addToDay) await addExerciseToProgramDay(addToDay, record.id);
+      router.push(safePath(returnTo, `/exercises/${record.id}`));
     }
   }
 
@@ -236,7 +286,7 @@ export function ExerciseForm({ initial }: { initial?: ExerciseRecord }) {
         </fieldset>
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium">Setup fields</h2>
+            <h2 className="text-sm font-medium">Custom</h2>
             <Button
               type="button"
               variant="secondary"
@@ -247,7 +297,7 @@ export function ExerciseForm({ initial }: { initial?: ExerciseRecord }) {
                 ])
               }
             >
-              Add field
+              Add custom
             </Button>
           </div>
           {fields.map((field, index) => (

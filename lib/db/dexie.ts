@@ -95,3 +95,38 @@ class BigBearDB extends Dexie {
 }
 
 export const db = new BigBearDB();
+
+export function isTransientDbError(error: unknown): boolean {
+  if (!error) return false;
+  const msg = error instanceof Error ? error.message : String(error);
+  return (
+    msg.includes("cursor that doesn't exist") ||
+    msg.includes("without an in-progress transaction") ||
+    msg.includes("Indexed Database server") ||
+    msg.includes("Transaction aborted") ||
+    msg.includes("Connection to Indexed Database server lost")
+  );
+}
+
+export async function withDbRetry<T>(operation: () => Promise<T>, retries = 2, delayMs = 300): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (retries > 0 && isTransientDbError(error)) {
+      console.warn("[bbl] WebKit IndexedDB error caught, reconnecting db:", error);
+      try {
+        if (db.isOpen()) db.close();
+      } catch {
+        // ignore
+      }
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      try {
+        await db.open();
+      } catch {
+        // ignore
+      }
+      return withDbRetry(operation, retries - 1, delayMs * 2);
+    }
+    throw error;
+  }
+}

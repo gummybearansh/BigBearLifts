@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { db } from "@/lib/db/dexie";
 import { saveBodyMetric, saveGoal } from "@/lib/db/training-store";
+import { sessionDateLabel } from "@/components/progress/format";
 import { bmi, ffmi, kgToDisplay, localDateKey } from "@/lib/training";
 
 export function BodyScreen() {
@@ -25,17 +26,15 @@ export function BodyScreen() {
   const weightRef = useRef<HTMLInputElement>(null);
   const unit = settings?.unit ?? "kg";
   const sorted = [...(metrics ?? [])].sort((a, b) => a.date.localeCompare(b.date));
-  const latest = sorted[sorted.length - 1];
-  const chart = sorted.map((row, index) => {
-    const window = sorted.slice(Math.max(0, index - 6), index + 1);
-    const samples = window.flatMap((item) => (item.weightKg ? [item.weightKg] : []));
-    const trend = samples.length ? samples.reduce((sum, value) => sum + value, 0) / samples.length : null;
-    return {
-      date: row.date.slice(5),
-      weight: row.weightKg ? kgToDisplay(row.weightKg, unit) : null,
-      trend: trend ? kgToDisplay(trend, unit) : null,
-    };
+  const latest = [...sorted].reverse().find((row) => row.weightKg);
+  const chart = sorted.flatMap((row) => {
+    if (!row.weightKg) return [];
+    const weightValue = kgToDisplay(row.weightKg, unit);
+    return [{ date: row.date, label: sessionDateLabel(row.date), axis: row.date.slice(5), weight: weightValue }];
   });
+  const weights = chart.map((point) => point.weight);
+  const yMin = weights.length ? Math.floor(Math.min(...weights) - 1) : 0;
+  const yMax = weights.length ? Math.ceil(Math.max(...weights) + 1) : 1;
   const weightKg = latest?.weightKg ?? settings?.bodyweightKg ?? 0;
   const height = settings?.heightCm ?? 0;
   const bodyMass = bmi(weightKg, height);
@@ -90,17 +89,36 @@ export function BodyScreen() {
             }
           />
         ) : (
-          <div className="h-52">
+          <>
+          <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chart}>
-                <XAxis dataKey="date" tick={{ fill: "#9A9AA2", fontSize: 12 }} />
-                <YAxis tick={{ fill: "#9A9AA2", fontSize: 12 }} width={36} />
-                <Tooltip />
-                <Line dataKey="weight" stroke="#9A9AA2" dot={false} name="Weight" />
-                <Line dataKey="trend" stroke="#FF5A1F" strokeWidth={2} dot={false} name="7-day" />
+              <LineChart data={chart} margin={{ top: 12, right: 8, left: 0, bottom: 0 }}>
+                <XAxis dataKey="axis" tick={{ fill: "#9A9AA2", fontSize: 11 }} interval={Math.max(0, Math.floor(chart.length / 4))} />
+                <YAxis tick={{ fill: "#9A9AA2", fontSize: 11 }} width={40} domain={[yMin, yMax]} />
+                <Tooltip content={(props) => <WeightTip active={props.active} payload={props.payload} unit={unit} />} cursor={{ stroke: "var(--primary)", strokeWidth: 1 }} />
+                <Line
+                  dataKey="weight"
+                  stroke="var(--primary)"
+                  strokeWidth={2}
+                  name="Weight"
+                  isAnimationActive={false}
+                  dot={{ r: 4, fill: "var(--primary)", stroke: "#0A0A0B", strokeWidth: 2 }}
+                  activeDot={{ r: 7, fill: "var(--primary)", stroke: "#F5F5F7", strokeWidth: 2 }}
+                />
               </LineChart>
             </ResponsiveContainer>
           </div>
+          <ul className="overflow-hidden rounded-2xl border border-border bg-card">
+            {[...chart].reverse().map((point) => (
+              <li key={point.date} className="flex items-center justify-between border-b border-border px-4 py-3 last:border-b-0">
+                <span className="text-sm">{point.label}</span>
+                <span className="text-sm font-medium">
+                  {point.weight} {unit}
+                </span>
+              </li>
+            ))}
+          </ul>
+          </>
         )}
         <section className="rounded-2xl border border-border bg-card p-4">
           <p className="text-sm text-muted-foreground">Weight goal {weightGoal ? `· ${weightGoal.targetValue} kg` : ""}</p>
@@ -123,6 +141,20 @@ export function BodyScreen() {
         </section>
       </main>
     </>
+  );
+}
+
+function WeightTip({ active, payload, unit }: { active?: boolean; payload?: unknown; unit: string }) {
+  const rows = Array.isArray(payload) ? payload : [];
+  const point = (rows[0] as { payload?: { label?: string; weight?: number } } | undefined)?.payload;
+  if (!active || !point || point.weight == null) return null;
+  return (
+    <div className="rounded-xl border border-border bg-card px-3 py-2 text-sm shadow-none">
+      <p>{point.label}</p>
+      <p className="mt-1 font-medium">
+        {point.weight} {unit}
+      </p>
+    </div>
   );
 }
 

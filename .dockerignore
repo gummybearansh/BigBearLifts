@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.env
+.env.*
+uploads
+data/personal-seed.json
+scripts/import-notes.ts
+*.pem
+docs/screenshots
+gcloud-key.json
+*-service-account.json
+service-account*.json
+client_secret*.json
+rclone.conf

@@ -71,7 +71,7 @@ const setSchema = z.object({
   id,
   workoutExerciseId: id,
   order: z.number().int().nonnegative(),
-  type: z.enum(["warmup", "working", "amrap", "drop", "failure"]),
+  type: z.enum(["warmup", "working", "amrap", "drop", "failure", "negative"]),
   weight: z.number(),
   reps: z.number().int().nonnegative(),
   parentSetId: id.nullable(),

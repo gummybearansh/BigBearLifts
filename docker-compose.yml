@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bbl
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: bigbearlifts
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bbl -d bigbearlifts"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    env_file: .env.runtime
+    environment:
+      UPLOAD_DIR: /var/www/bigbearlifts/uploads
+      LOG_PATH: /var/log/bbl/app.log
+      RCLONE_CONFIG: /run/rclone/rclone.conf
+      RCLONE_REMOTE: "gdrive:"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    volumes:
+      - uploads:/var/www/bigbearlifts/uploads
+      - /opt/bigbearlifts/logs:/var/log/bbl
+      - /opt/bigbearlifts/rclone:/run/rclone
+    networks:
+      default: {}
+      ship24:
+        aliases:
+          - bigbearlifts
+
+  tools:
+    profiles: ["ops"]
+    build:
+      context: .
+      target: tools
+    env_file: .env.runtime
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./data/personal-seed.json:/seed/personal-seed.json:ro
+      - ./scripts/import-notes.ts:/app/scripts/import-notes.ts:ro
+      - ./.env.seed:/run/seed.env:ro
+    working_dir: /app
+
+volumes:
+  pgdata:
+  uploads:
+
+networks:
+  ship24:
+    external: true
+    name: deploy_default

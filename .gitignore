@@ -7,6 +7,8 @@ dist
 .env
 .env.*
 !.env.example
+.env.runtime
+.env.seed
 
 uploads
 /var
@@ -17,7 +19,10 @@ scripts/import-notes.ts
 gcloud-key.json
 *-service-account.json
 service-account*.json
+client_secret*.json
+rclone.conf
 
 npm-debug.log*
 .DS_Store
 coverage
+*.sqlite*

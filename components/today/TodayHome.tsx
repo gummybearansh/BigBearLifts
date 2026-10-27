@@ -77,11 +77,15 @@ export function TodayHome() {
     <>
       <PageHeader
         title="Today"
-        action={<p className="text-sm font-medium text-muted-foreground">{streak} day streak</p>}
+        action={<p className="text-sm font-medium text-primary">{streak} day streak</p>}
       />
       <main className={page}>
-        <section className="rounded-2xl border border-border bg-card p-4">
-          <p className="text-sm text-muted-foreground">
+        <section className="overflow-hidden rounded-2xl border border-border bg-card">
+          <div className="relative h-44 bg-black">
+            <img src="/atmosphere/today-mark.jpg" alt="" className="h-full w-full object-contain object-right" />
+          </div>
+          <div className="px-4 pb-4 pt-4">
+          <p className="text-sm text-primary">
             {resting ? "Rest day" : open ? "In progress" : tree?.program.name ?? "Program"}
           </p>
           <h2 className="mt-1 text-[32px] font-semibold leading-tight tracking-tight">
@@ -105,6 +109,7 @@ export function TodayHome() {
           >
             Rest day
           </Button>
+          </div>
         </section>
         <Link href="/body" className="flex h-14 items-center rounded-2xl border border-border bg-card px-4 font-medium">
           Log weight
@@ -133,7 +138,7 @@ export function TodayHome() {
                         {workout.finishedAt ? localDateKey(workout.finishedAt) : ""}
                       </span>
                     </span>
-                    <span className="shrink-0 text-sm">{formatWeight(workout.totalVolume, unit)}</span>
+                    <span className="shrink-0 text-sm text-primary">{formatWeight(workout.totalVolume, unit)}</span>
                   </Link>
                 </li>
               ))}

@@ -1,4 +1,4 @@
-import type { PrRecord, PrType, SetPartial, SetType, UnitSystem, WorkoutSetRecord } from "@/lib/records";
+import type { PrRecord, PrType, SetPartial, UnitSystem, WorkoutSetRecord } from "@/lib/records";
 
 export { sessionVolumeKg, setVolumeKg } from "@/lib/volume";
 
@@ -48,10 +48,6 @@ function formatLoad(kg: number, unit: UnitSystem, equipment: string): string {
   return formatWeight(kg, unit);
 }
 
-export function roundToPlate(kg: number): number {
-  return Math.round(kg / 2.5) * 2.5;
-}
-
 export function epley(weight: number, reps: number): number {
   if (weight <= 0 || reps <= 0) return 0;
   if (reps === 1) return weight;
@@ -72,19 +68,7 @@ export function nextInRotation<T extends { id: string; order: number }>(
 }
 
 export function countableSet(type: string): boolean {
-  return type === "working" || type === "amrap" || type === "drop" || type === "failure";
-}
-
-export function warmupLoads(
-  workingKg: number,
-  scheme: { percents: number[]; reps: number[] } | null,
-): { weight: number; reps: number }[] {
-  const percents = scheme?.percents.length ? scheme.percents : [0.4, 0.6, 0.8];
-  const reps = scheme?.reps.length ? scheme.reps : [8, 5, 3];
-  return percents.map((percent, index) => ({
-    weight: roundToPlate(workingKg * percent),
-    reps: reps[index] ?? reps[reps.length - 1] ?? 5,
-  }));
+  return type === "working" || type === "amrap" || type === "drop" || type === "failure" || type === "negative";
 }
 
 export function platesPerSide(
@@ -222,6 +206,4 @@ function consider(
   created.push(record);
 }
 
-export function isSetType(value: string): value is SetType {
-  return value === "warmup" || value === "working" || value === "amrap" || value === "drop" || value === "failure";
-}
+export { isSetType } from "@/lib/records";

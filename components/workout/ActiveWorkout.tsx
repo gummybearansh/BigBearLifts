@@ -141,6 +141,11 @@ export function ActiveWorkout({ id }: { id: string }) {
               emptyMessage="No exercises"
               options={exerciseOptions}
               onChange={setAddExerciseId}
+              onCreate={(query) =>
+                router.push(
+                  `/exercises/new?name=${encodeURIComponent(query)}&returnTo=${encodeURIComponent(`/workout/${id}`)}&addToWorkout=${encodeURIComponent(id)}`,
+                )
+              }
             />
             <Button type="button" disabled={!addExerciseId} onClick={() => void addExercise()}>
               Add
@@ -179,6 +184,53 @@ export function ActiveWorkout({ id }: { id: string }) {
   );
 }
 
+function isHoleSetting(value: string): boolean {
+  return /^\d+(\.\d+)?$/.test(value);
+}
+
+function holeNote(block: LocalWorkoutExercise): string {
+  const hole = String(block.setupValues.Hole ?? "").trim();
+  if (!hole || isHoleSetting(hole)) return "";
+  return hole;
+}
+
+function customSummary(block: LocalWorkoutExercise, setupFields: { label: string }[]): string {
+  const note = block.notes?.trim() || holeNote(block);
+  const settings = setupFields.flatMap((field) => {
+    const raw = block.setupValues[field.label];
+    if (raw === undefined || raw === null || String(raw).trim() === "") return [];
+    const value = String(raw).trim();
+    if (field.label === "Hole" && !isHoleSetting(value)) return [];
+    if (note && value === note) return [];
+    return [`${field.label} ${value}`];
+  });
+  return [note, ...settings].filter(Boolean).join(" · ");
+}
+
+function useKeyboardInset(active: boolean): number {
+  const [inset, setInset] = useState(0);
+  useEffect(() => {
+    if (!active) {
+      setInset(0);
+      return;
+    }
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const update = () => {
+      const overlap = window.innerHeight - viewport.height - viewport.offsetTop;
+      setInset(Math.max(0, Math.round(overlap)));
+    };
+    update();
+    viewport.addEventListener("resize", update);
+    viewport.addEventListener("scroll", update);
+    return () => {
+      viewport.removeEventListener("resize", update);
+      viewport.removeEventListener("scroll", update);
+    };
+  }, [active]);
+  return inset;
+}
+
 function ExerciseBlock({
   block,
   sets,
@@ -205,13 +257,13 @@ function ExerciseBlock({
   onMoveDown?: () => void;
 }) {
   const [customOpen, setCustomOpen] = useState(false);
-  const customText = setupFields
-    .flatMap((field) => {
-      const value = block.setupValues[field.label];
-      if (value === undefined || value === null || String(value).trim() === "") return [];
-      return [`${field.label} ${value}`];
-    })
-    .join(" · ");
+  const [note, setNote] = useState(() => block.notes?.trim() || holeNote(block));
+  const keyboardInset = useKeyboardInset(customOpen);
+  const customText = customSummary(block, setupFields);
+
+  useEffect(() => {
+    if (!customOpen) setNote(block.notes?.trim() || holeNote(block));
+  }, [block.notes, block.setupValues, customOpen]);
 
   async function commitSet(set: LocalWorkoutSet, patch: Partial<LocalWorkoutSet>, completed?: boolean) {
     const nextCompleted = completed ?? set.isCompleted;
@@ -271,6 +323,16 @@ function ExerciseBlock({
     await touchWorkout(workoutId);
   }
 
+  async function saveNote(value: string) {
+    const notes = value.trim();
+    const nextSetup = { ...block.setupValues };
+    const hole = String(nextSetup.Hole ?? "").trim();
+    if (hole && !isHoleSetting(hole)) delete nextSetup.Hole;
+    const stamp = dirtyStamp();
+    await db.workoutExercises.update(block.id, { notes: notes || null, setupValues: nextSetup, ...stamp });
+    await touchWorkout(workoutId);
+  }
+
   return (
     <article className="rounded-2xl border border-border bg-card p-3">
       <div className="flex items-start justify-between gap-2">
@@ -279,11 +341,9 @@ function ExerciseBlock({
           {customText ? <p className="mt-1 text-sm text-muted-foreground">Custom: {customText}</p> : null}
         </div>
         <div className="flex shrink-0 items-center">
-          {setupFields.length > 0 ? (
-            <button type="button" className="h-11 w-11 text-lg leading-none text-muted-foreground" aria-label="Custom" onClick={() => setCustomOpen(true)}>
-              ···
-            </button>
-          ) : null}
+          <button type="button" className="h-11 w-11 text-lg leading-none text-muted-foreground" aria-label="Custom" onClick={() => setCustomOpen(true)}>
+            ···
+          </button>
           {onMoveUp || onMoveDown ? (
             <div className="flex flex-col">
               <button
@@ -308,23 +368,39 @@ function ExerciseBlock({
           ) : null}
         </div>
       </div>
-      {setupFields.length > 0 ? (
-        <Sheet open={customOpen} onOpenChange={setCustomOpen}>
-          <SheetContent>
-            <SheetHeader>
-              <SheetTitle>Custom</SheetTitle>
-              <SheetDescription>{name}</SheetDescription>
-            </SheetHeader>
-            <div className="mt-4 flex flex-col gap-3">
-              {setupFields.map((field) =>
-                field.type === "enum" ? (
+      <Sheet open={customOpen} onOpenChange={setCustomOpen}>
+        <SheetContent
+          className="overflow-y-auto"
+          style={{ bottom: keyboardInset, maxHeight: `calc(100dvh - ${keyboardInset}px - 1rem)` }}
+        >
+          <SheetHeader>
+            <SheetTitle>Custom</SheetTitle>
+            <SheetDescription>{name}</SheetDescription>
+          </SheetHeader>
+          <div className="mt-4 flex flex-col gap-3">
+            <label className="flex flex-col gap-2 text-sm text-muted-foreground">
+              Note
+              <textarea
+                aria-label="Note"
+                rows={3}
+                value={note}
+                placeholder="Add a note"
+                className="min-h-24 w-full resize-none rounded-xl border border-input bg-surface-elevated px-3 py-3 text-base text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) => setNote(event.target.value)}
+                onFocus={(event) => event.currentTarget.scrollIntoView({ block: "center" })}
+                onBlur={() => void saveNote(note)}
+              />
+            </label>
+            {setupFields.map((field) => (
+              <label key={field.id} className="flex flex-col gap-2 text-sm text-muted-foreground">
+                {field.label}
+                {field.type === "enum" ? (
                   <NativeSelect
-                    key={field.id}
                     aria-label={field.label}
                     value={String(block.setupValues[field.label] ?? "")}
                     onChange={(event) => void changeSetup(field.label, event.target.value)}
                   >
-                    <option value="">{field.label}</option>
+                    <option value="">None</option>
                     {field.options.map((option) => (
                       <option key={option} value={option}>
                         {option}
@@ -333,19 +409,20 @@ function ExerciseBlock({
                   </NativeSelect>
                 ) : (
                   <input
-                    key={field.id}
                     aria-label={field.label}
-                    placeholder={field.label}
-                    defaultValue={String(block.setupValues[field.label] ?? "")}
-                    className="h-11 min-w-0 rounded-xl border border-input bg-surface-elevated px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    inputMode={field.type === "number" ? "numeric" : "text"}
+                    placeholder={field.type === "number" ? "Number" : field.label}
+                    defaultValue={field.label === "Hole" && !isHoleSetting(String(block.setupValues.Hole ?? "").trim()) ? "" : String(block.setupValues[field.label] ?? "")}
+                    className="h-11 min-w-0 rounded-xl border border-input bg-surface-elevated px-3 text-base text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onFocus={(event) => event.currentTarget.scrollIntoView({ block: "center" })}
                     onBlur={(event) => void changeSetup(field.label, event.target.value.trim())}
                   />
-                ),
-              )}
-            </div>
-          </SheetContent>
-        </Sheet>
-      ) : null}
+                )}
+              </label>
+            ))}
+          </div>
+        </SheetContent>
+      </Sheet>
       <div className="mt-3 flex h-11 items-center justify-between rounded-xl bg-surface-elevated px-3">
         <span className="text-sm text-muted-foreground">Rest</span>
         <div className="flex items-center">

@@ -1,5 +1,6 @@
 "use client";
 
+import { motion } from "framer-motion";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChartNoAxesCombined, Dumbbell, Ellipsis, ListChecks, Scale } from "lucide-react";
@@ -41,13 +42,15 @@ export function BottomNav() {
                   active ? "text-primary" : "text-muted-foreground",
                 )}
               >
-                <span
-                  className={cn(
-                    "flex h-7 w-12 items-center justify-center rounded-full",
-                    active && "bg-primary/15",
-                  )}
-                >
-                  <Icon className="size-5" strokeWidth={active ? 2.25 : 1.75} aria-hidden />
+                <span className="relative flex h-7 w-12 items-center justify-center">
+                  {active ? (
+                    <motion.span
+                      layoutId="tab-pill"
+                      className="absolute inset-0 rounded-full bg-primary/15"
+                      transition={{ type: "spring", stiffness: 520, damping: 36 }}
+                    />
+                  ) : null}
+                  <Icon className="relative size-5" strokeWidth={active ? 2.25 : 1.75} aria-hidden />
                 </span>
                 {tab.label}
               </Link>
